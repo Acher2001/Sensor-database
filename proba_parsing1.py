@@ -1,37 +1,42 @@
-import requests
+from selenium import webdriver
+from selenium.webdriver.chrome.service import Service
+from webdriver_manager.chrome import ChromeDriverManager
 from bs4 import BeautifulSoup
 
-# Функция для парсинга данных с заданной ссылки
-def parse_data(url):
-    # Отправляем GET-запрос к указанной ссылке
-    response = requests.get(url)
+# Функция для обработки товаров на странице
+def process_products(page_source, file):
+    soup = BeautifulSoup(page_source, 'html.parser')
 
-    # Проверяем успешность запроса
-    if response.status_code == 200:
-        # Используем BeautifulSoup для парсинга HTML-кода страницы
-        soup = BeautifulSoup(response.content, 'html.parser')
+    # Пытаемся найти все элементы с товаром
+    product_divs = soup.find_all('div', {'field': 'link'})
 
-        # Находим блок с товарами на странице
-        products_container = soup.find('div', class_='container')
+    if not product_divs:
+        file.write("На этой странице нет товаров\n")
+        return
 
-        # Проверяем, найден ли блок с товарами
-        if products_container:
-            # Просматриваем информацию о каждом товаре
-            for product in products_container.find_all('div', class_='col-6 col-md-4 col-lg-3 col-xl-2 mb-4'):
-                # Получаем информацию о товаре (например, название и цену)
-                name = product.find('a', class_='text-dark').text.strip()
-                price = product.find('span', class_='price').text.strip()
+    for product_div in product_divs:
+        product_name_tag = product_div.find('a')
+        if product_name_tag:
+            product_name = product_name_tag.text.strip()
+            exists_tag = product_div.find_next_sibling('span', {'field': 'exists'})
+            if exists_tag and "Товар в наличии" in exists_tag.text:
+                price_span = product_div.find_next_sibling('div', {'class': 'price'})
+                if price_span:
+                    price = price_span.text.strip()
+                else:
+                    price = "Цена не указана"
 
-                # Выводим информацию о товаре
-                print("Название:", name)
-                print("Цена:", price)
-                print()
+                file.write("Название товара: {}\n".format(product_name))
+                file.write("Наличие: {}\n".format(exists_tag.text.strip()))
+                file.write("Цена: {}\n".format(price))
+                file.write("-" * 50 + "\n")
         else:
-            print("Блок с товарами не найден на странице:", url)
-    else:
-        print("Ошибка при получении страницы:", response.status_code)
+            file.write("На этой странице есть товары, но их название не найдено.\n")
 
-# Ссылки для парсинга данных
+# Настройка веб-драйвера Chrome
+service = Service(ChromeDriverManager().install())
+driver = webdriver.Chrome(service=service)
+
 urls = [
     "https://www.xn--80ai9an.xn--p1ai/shop/550",
     "https://www.xn--80ai9an.xn--p1ai/shop/549",
@@ -39,8 +44,12 @@ urls = [
     "https://www.xn--80ai9an.xn--p1ai/shop/552"
 ]
 
-# Парсим данные с каждой ссылки
-for url in urls:
-    print("Парсинг данных с", url)
-    parse_data(url)
-    print()
+# Создаем файл для записи результатов
+with open("output.txt", "w", encoding="utf-8") as file:
+    for url in urls:
+        driver.get(url)
+        file.write("Страница: {}\n".format(url))
+        process_products(driver.page_source, file)
+
+# Завершаем сеанс браузера
+driver.quit()
